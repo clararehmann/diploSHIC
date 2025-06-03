@@ -6,11 +6,74 @@ import sys
 import time
 from diploshic.fvTools import *
 
-if not len(sys.argv) in [13, 15]:
+if not len(sys.argv) in [13, 15, 16, 17]:
     sys.exit(
-        "usage:\npython makeFeatureVecsForChrArmFromVcfDiploid.py vcfFileName chrArm chrLen targetPop winSize numSubWins maskFileName unmaskedFracCutoff unmaskedGenoFracCutoff sampleToPopFileName statFileName outFileName [segmentStart segmentEnd]\n"
+        "usage:\npython makeFeatureVecsForChrArmFromVcfDiploid.py vcfFileName chrArm chrLen targetPop winSize numSubWins maskFileName unmaskedFracCutoff unmaskedGenoFracCutoff sampleToPopFileName statFileName outFileName [segmentStart segmentEnd] [windowOffset]\n"
     )
-if len(sys.argv) == 15:
+
+# Handle different argument combinations
+if len(sys.argv) == 17:  # All optional args: segmentStart segmentEnd windowOffset
+    (
+        vcfFileName,
+        chrArm,
+        chrLen,
+        targetPop,
+        winSize,
+        numSubWins,
+        maskFileName,
+        unmaskedFracCutoff,
+        unmaskedGenoFracCutoff,
+        sampleToPopFileName,
+        statFileName,
+        outfn,
+        segmentStart,
+        segmentEnd,
+        windowOffset,
+    ) = sys.argv[1:]
+    segmentStart, segmentEnd, windowOffset = int(segmentStart), int(segmentEnd), int(windowOffset)
+elif len(sys.argv) == 16:  # Could be segmentStart+segmentEnd OR just windowOffset
+    # Check if we have segmentStart and segmentEnd by seeing if the 13th arg looks like a reasonable coordinate
+    try:
+        potential_segment_start = int(sys.argv[13])
+        potential_segment_end = int(sys.argv[14])
+        potential_window_offset = int(sys.argv[15])
+        # If all three parse as integers, assume segmentStart, segmentEnd, windowOffset
+        segmentStart, segmentEnd, windowOffset = potential_segment_start, potential_segment_end, potential_window_offset
+        # Extract the base arguments
+        (
+            vcfFileName,
+            chrArm,
+            chrLen,
+            targetPop,
+            winSize,
+            numSubWins,
+            maskFileName,
+            unmaskedFracCutoff,
+            unmaskedGenoFracCutoff,
+            sampleToPopFileName,
+            statFileName,
+            outfn,
+        ) = sys.argv[1:13]
+    except (ValueError, IndexError):
+        # If parsing fails, treat as just windowOffset
+        (
+            vcfFileName,
+            chrArm,
+            chrLen,
+            targetPop,
+            winSize,
+            numSubWins,
+            maskFileName,
+            unmaskedFracCutoff,
+            unmaskedGenoFracCutoff,
+            sampleToPopFileName,
+            statFileName,
+            outfn,
+            windowOffset,
+        ) = sys.argv[1:]
+        segmentStart = None
+        windowOffset = int(windowOffset)
+elif len(sys.argv) == 15:  # segmentStart and segmentEnd only
     (
         vcfFileName,
         chrArm,
@@ -28,7 +91,8 @@ if len(sys.argv) == 15:
         segmentEnd,
     ) = sys.argv[1:]
     segmentStart, segmentEnd = int(segmentStart), int(segmentEnd)
-else:
+    windowOffset = 0
+else:  # len(sys.argv) == 13, no optional args
     (
         vcfFileName,
         chrArm,
@@ -44,6 +108,7 @@ else:
         outfn,
     ) = sys.argv[1:]
     segmentStart = None
+    windowOffset = 0
 
 unmaskedFracCutoff = float(unmaskedFracCutoff)
 if unmaskedFracCutoff < 0.0 or unmaskedFracCutoff > 1.0:
@@ -62,20 +127,25 @@ assert winSize % numSubWins == 0 and numSubWins > 1
 subWinSize = int(winSize / numSubWins)
 
 
-def getSubWinBounds(chrLen, subWinSize):
-    lastSubWinEnd = chrLen - chrLen % subWinSize
+def getSubWinBounds(chrLen, subWinSize, windowOffset=0):
+    # Start windows from windowOffset + 1 instead of 1
+    firstSubWinStart = windowOffset + 1
+    lastSubWinEnd = chrLen - ((chrLen - windowOffset) % subWinSize)
     lastSubWinStart = lastSubWinEnd - subWinSize + 1
+    
     subWinBounds = []
-    for subWinStart in range(1, lastSubWinStart + 1, subWinSize):
+    for subWinStart in range(firstSubWinStart, lastSubWinStart + 1, subWinSize):
         subWinEnd = subWinStart + subWinSize - 1
-        subWinBounds.append((subWinStart, subWinEnd))
+        if subWinEnd <= chrLen:  # Don't exceed chromosome length
+            subWinBounds.append((subWinStart, subWinEnd))
     return subWinBounds
 
 
-def getSnpIndicesInSubWins(subWinSize, lastSubWinEnd, snpLocs):
-    subWinStart = 1
+def getSnpIndicesInSubWins(subWinSize, lastSubWinEnd, snpLocs, windowOffset=0):
+    subWinStart = windowOffset + 1  # Start from offset
     subWinEnd = subWinStart + subWinSize - 1
     snpIndicesInSubWins = [[]]
+    
     for i in range(len(snpLocs)):
         while snpLocs[i] <= lastSubWinEnd and not (
             snpLocs[i] >= subWinStart and snpLocs[i] <= subWinEnd
@@ -85,6 +155,8 @@ def getSnpIndicesInSubWins(subWinSize, lastSubWinEnd, snpLocs):
             snpIndicesInSubWins.append([])
         if snpLocs[i] <= lastSubWinEnd:
             snpIndicesInSubWins[-1].append(i)
+    
+    # Add empty windows for any remaining subwindows
     while subWinEnd < lastSubWinEnd:
         snpIndicesInSubWins.append([])
         subWinStart += subWinSize
@@ -188,7 +260,7 @@ statNames = [
     "diplo_Omega",
 ]
 
-subWinBounds = getSubWinBounds(chrLen, subWinSize)
+subWinBounds = getSubWinBounds(chrLen, subWinSize, windowOffset)
 
 header = "chrom classifiedWinStart classifiedWinEnd bigWinRange".split()
 statHeader = "chrom start end".split()
@@ -206,17 +278,20 @@ for statName in statNames:
 
 startTime = time.perf_counter()
 goodSubWins = []
-lastSubWinEnd = chrLen - chrLen % subWinSize
+lastSubWinEnd = chrLen - ((chrLen - windowOffset) % subWinSize)
 snpIndicesInSubWins = getSnpIndicesInSubWins(
-    subWinSize, lastSubWinEnd, positions
+    subWinSize, lastSubWinEnd, positions, windowOffset
 )
 subWinIndex = 0
+firstSubWinStart = windowOffset + 1
 lastSubWinStart = lastSubWinEnd - subWinSize + 1
 if statFileName:
     statFile = open(statFileName, "w")
     statFile.write(statHeader + "\n")
-for subWinStart in range(1, lastSubWinStart + 1, subWinSize):
+for subWinStart in range(firstSubWinStart, lastSubWinStart + 1, subWinSize):
     subWinEnd = subWinStart + subWinSize - 1
+    if subWinEnd > chrLen:  # Skip windows that exceed chromosome length
+        break
     unmaskedFrac = unmasked[subWinStart - 1 : subWinEnd].count(True) / float(
         subWinEnd - subWinStart + 1
     )

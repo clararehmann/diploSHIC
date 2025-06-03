@@ -262,6 +262,11 @@ parser_d.add_argument(
     help="Right boundary of region in which feature vectors are calculated (whole arm if omitted)",
     default="None",
 )
+parser_d.add_argument(
+    "--windowOffset",
+    help="Offset for window positioning (shifts the entire windowing grid by this amount, default=0)",
+    default="0",
+)
 parser_d.set_defaults(mode="fvecVcf")
 parser_d._positionals.title = "required arguments"
 
@@ -735,6 +740,9 @@ elif argsDict["mode"] == "fvecVcf":
     additionalArgs = []
     if argsDict["segmentStart"] != "None":
         additionalArgs += [argsDict["segmentStart"], argsDict["segmentEnd"]]
+    if argsDict["windowOffset"] != "0":
+        additionalArgs += [argsDict["windowOffset"]]
+    if additionalArgs:
         cmd += " " + " ".join(additionalArgs)
     # cmd += " > " + argsDict['fvecFileName']
     print(cmd)
