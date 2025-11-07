@@ -6,20 +6,27 @@ double r2(int nSamps, int *haps, int i, int j){
 	double pij = 0.0;
 	double count = 0.0;
 	int k;
+
+	// Optimize memory access by caching array values in local variables
+	// This reduces redundant memory accesses from 3-4x to 1x per element
 	for(k=0; k<nSamps; k++){
-		if((haps[i*nSamps + k] == 1 || haps[i*nSamps + k] == 0) && (haps[j*nSamps + k] == 1 || haps[j*nSamps + k] == 0)){
-			if(haps[i*nSamps + k] == 1)
+		int hap_i = haps[i*nSamps + k];
+		int hap_j = haps[j*nSamps + k];
+
+		// Only process if both haplotypes are valid (0 or 1)
+		if((hap_i == 1 || hap_i == 0) && (hap_j == 1 || hap_j == 0)){
+			if(hap_i == 1)
 				pi++;
 
-			if(haps[j*nSamps + k] == 1)
+			if(hap_j == 1)
 				pj++;
 
-			if(haps[i*nSamps + k] == 1 && haps[j*nSamps + k] == 1)
+			if(hap_i == 1 && hap_j == 1)
 				pij++;
-			count += 1;
+			count += 1.0;
 		}
 	}
-	if (count == 0){
+	if (count == 0.0){
 		return(-1.0);
 	}
 	else{

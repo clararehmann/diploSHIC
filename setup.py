@@ -7,6 +7,7 @@ with open("README.md", "r") as fh:
 shic_stats = Extension(
     "diploshic.shicstats",
     sources=["diploshic/shicstats.pyf", "diploshic/utils.c"],
+    extra_compile_args=['-O3', '-march=native'],
 )
 setup(
     name="diploSHIC",
