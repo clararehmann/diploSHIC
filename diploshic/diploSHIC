@@ -267,6 +267,12 @@ parser_d.add_argument(
     help="Offset for window positioning (shifts the entire windowing grid by this amount, default=0)",
     default="0",
 )
+parser_d.add_argument(
+    "--threads",
+    type=int,
+    help="Number of parallel threads for window processing (default=1, use 0 for auto-detect)",
+    default=1,
+)
 parser_d.set_defaults(mode="fvecVcf")
 parser_d._positionals.title = "required arguments"
 
@@ -705,6 +711,7 @@ elif argsDict["mode"] == "fvecVcf":
             argsDict["sampleToPopFileName"],
             argsDict["statFileName"],
             argsDict["fvecFileName"],
+            argsDict["threads"],
         ]
         cmd = (
             pyExec
@@ -742,6 +749,9 @@ elif argsDict["mode"] == "fvecVcf":
         additionalArgs += [argsDict["segmentStart"], argsDict["segmentEnd"]]
     if argsDict["windowOffset"] != "0":
         additionalArgs += [argsDict["windowOffset"]]
+    # Add threads argument at the end for both diploid and haploid modes
+    if argsDict["threads"] > 1 or argsDict["threads"] == 0:
+        additionalArgs += [str(argsDict["threads"])]
     if additionalArgs:
         cmd += " " + " ".join(additionalArgs)
     # cmd += " > " + argsDict['fvecFileName']
